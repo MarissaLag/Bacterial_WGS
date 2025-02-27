@@ -1,0 +1,431 @@
+#Bacterial WGS from short reads (150bp)
+#Feb 2025
+#Tutorial used for this: (source: https://github.com/Joseph7e/MDIBL-T3-WGS-Tutorial#adapter-and-quality-trimming)
+#Also used a lot of Ben’s help :)
+
+#Get and set path
+pwd
+cd ~/Documents/PhD/MU42022_WGS
+
+#Update: having issues with conda, ignore and download programs manually then update profile (add path to profile)
+#After downloading miniconda
+#Create conda environment
+#conda create -n WGS
+#Check environments
+#conda info —envs
+#Activate WGS env
+#conda activate WGS
+#Active environment has an “*”
+#Have error “Library not loaded: @rpath/libarchive.13.dylib”
+#Apparently, a glitch with Apple M1 chips 
+#(see: https://github.com/mamba-org/mamba/issues/1826)
+#conda install libarchive -n base -c conda-forge #Issue: would not complete
+#Ignoring above issue for now, try following Ben’s simple_reads_to_counts repo
+#conda install -c bioconda fastqc
+
+
+#Installing packages manually: (i.e., not with conda or homebrewer)
+#https://www.bioinformatics.babraham.ac.uk/projects/download.html#fastqc
+#Installed fastqc onto my programs folder
+#Can add programs to your zshrc profile by adding program path, but be very careful as can cause issues.
+#To access zshrc pathway use:
+vi ~/.zshrc 
+
+#Instead of adding to my profile, I will just state path of program and of my fasta files in the code
+#Having issues with corrupted fasta file (only partially downloaded)
+#Ben says try Firefox with DownThemAll application
+#After, check if md5 "fingerprint" matches md5 link
+
+#Should match:
+5fb7053ae790791cb97218ca117441fa  NS.X0139.007.IDT_i7_313---IDT_i5_313.Roseo_R1.fastq.gz
+8b58f5ac95bf89a87e7ff82ceaea1222  NS.X0139.007.IDT_i7_313---IDT_i5_313.Roseo_R2.fastq.gz
+
+#To check use:
+
+md5 Roseo_R1.fastq.gz
+md5 Roseo_R2.fastq.gz
+
+(Roseo_R1.fastq.gz) = 5fb7053ae790791cb97218ca117441fa
+(Roseo_R2.fastq.gz) = 8b58f5ac95bf89a87e7ff82ceaea1222
+
+#Success! They match
+
+#Press q to exit
+
+#Find fastqc program:
+ ~/programs/FastQC.app/Contents/MacOS/fastqc 
+
+#run fastqc on fasta files: Roseo_R1.fastq  (forward) and Roseo_R2.fastq (reverse)
+#Set output directory as: raw_data_R1 and raw_data_R2, respectively
+#Use 12 threads to run code (-t 12)
+
+#reset working directory
+cd ~/Documents/PhD/MU42022_WGS
+
+ ~/programs/FastQC.app/Contents/MacOS/fastqc  Roseo_R1.fastq.gz -o raw_data_R1 -t 12
+
+ ~/programs/FastQC.app/Contents/MacOS/fastqc Roseo_R2.fastq.gz -o raw_data_R2 -t 12
+
+ls raw_data_R1
+ls raw_data_R2
+
+#View fastqc results by clicking on html link
+#Results for both F and R will say “failed” adapter content - because adaptors need to be removed
+#Reads look like extremely good quality, R read needs slight trimming on tail
+#R read also has a “overrepresented sequence”
+
+#Tutorial being followed uses a “wrapper script” (trim_scriptV2.sh) to run trimming with Trimmomatic
+#Good Trimmomatic tutorial: https://datacarpentry.github.io/wrangling-genomics/03-trimming.html
+
+~/Documents/PhD/MU42022_WGS/trim_script_TruSeq.sh raw_data_R1 raw_data_R2
+
+#”permission denied” for trim_script_TruSeq.sh - use chmod
+
+#Check permissions
+ls -l ~/Documents/PhD/MU42022_WGS/trim_script_TruSeq.sh
+
+#Make script executable for you
+chmod 755 ~/Documents/PhD/MU42022_WGS/trim_script_TruSeq.sh
+
+trim_script_TruSeq.sh FORWARD REVERSE
+
+#Cannot access trimmomatic with wrapper script - just run script manually
+
+#make fastqz files qzip as getting file corruption issues 
+gzip Roseo_R1.fastq
+gzip Roseo_R2.fastq
+
+FORWARD="Roseo_R1.fastq.gz”
+REVERSE="Roseo_R2.fastq.gz”
+
+echo $FORWARD
+echo $REVERSE
+
+#Long processing step
+java -jar ~/programs/Trimmomatic-0.39/trimmomatic-0.39.jar PE -threads 72 -phred33\
+    Roseo_R1.fastq.gz Roseo_R2.fastq.gz \
+    paired_forward.fastq.gz unpaired_forward.fastq.gz \
+    paired_reverse.fastq.gz unpaired_reverse.fastq.gz \
+    ILLUMINACLIP:/Users/maris/programs/Trimmomatic-0.39/adapters/TruSeq2-PE.fa:2:30:10 \
+    SLIDINGWINDOW:4:15 MINLEN:36
+
+#Here I only have one sample, but with many samples, will want to run a loop in the code
+
+#Getting error: Sequence and quality length don't match - fixed when uncorrupted files loaded
+#New error: “Unknown trimmer: unpaired_reverse.fastq.gz” - fixed when uncorrupted files loaded
+
+#now getting Sequence and quality length don't match error again
+#tried using 1 thread (suggested online) but did not help
+#Adding phred33 worked! 
+
+#Input Read Pairs: 66438134 Both Surviving: 57905994 (87.16%) 
+#Forward Only Surviving: 8345597 (12.56%) 
+#Reverse Only Surviving: 87850 (0.13%) Dropped: 98693 (0.15%)
+
+#re run fastqc on trimmed reads
+
+ ~/programs/FastQC.app/Contents/MacOS/fastqc   paired_forward.fastq.gz -o raw_data_R1 -t 12
+
+ ~/programs/FastQC.app/Contents/MacOS/fastqc   paired_reverse.fastq.gz -o raw_data_R1 -t 12
+
+#Issues still present - mainly, some overrepresented sequence and adapter content in forward .gz
+#Will ask if this is an issue
+
+#Continue, download SPAdes genome assembler
+#Downloaded in packages folder, path:
+
+cd ~/programs/SPAdes-4.0.0-Darwin/bin/spades.py
+
+#Long processing step #STOPPED here - will run on Thelio as taking too long
+~/programs/SPAdes-4.0.0-Darwin/bin/spades.py -1 paired_forward.fastq.gz -2 paired_reverse.fastq.gz -s unpaired_forward.fastq.gz -s unpaired_reverse.fastq.gz -o spades_assembly_default -t 24 --isolate
+
+#Getting issue: “spades-core” can’t be opened because Apple cannot check it for malicious software.
+#Tried chmod 755 on spades-core but nothing changed
+#downloaded correct bin file for Mac M2 chip (SPAdes-4.0.0-Darwin-arm64.tar.gz)
+#Must click on app (spades-core) and allow opening
+
+#Notice that the tutorial makes use of 'nohup' and '&'.
+#This allows you to close your computer and let the server continue working and/or let you continue working while the #job runs in the background.
+#But, be careful as it can freeze your computer
+#To terminate after using nohup, use command "kill pd enterpdnumber"
+
+#Ran assembly (code above) on Thelio (took ~ 30 mins) on untrimmed reads to start
+#Saved in /spades_run_thelio_2-25_02_21/spades_assembly_isolate
+#See notes about the run here: /spades_run_thelio_2-25_02_21/Notes_about_assembly.txt
+
+#Check assembly
+ls spades_assembly_default/
+# view FASTA file
+less -S spades_assembly_default/contigs.fasta
+# view the top 10 headers
+grep '>' spades_assembly_default/contigs.fasta | head
+# count the number of sequences
+grep -c '>' spades_assembly_default/contigs.fasta  #7709 in first assembly
+
+#In a perfect world, you would expect ~2 contigs (1 chromosome + a plasmid)
+#We typically see a genome split into 10's to 100's of contigs for a typical run
+
+#Genome structure assessment
+#Using QUAST: http://quast.bioinf.spbau.ru/manual.html
+
+# look at the usage
+~/programs/quast-5.3.0/quast.py --help
+# run the command
+~/programs/quast-5.3.0/quast.py spades_assembly_default/contigs.fasta -o quast_results
+
+#quast tells you about your contigs, here it predicts an L50 of 10 (10 contigs make up 50% of the bases)
+#Largest contig is ~400,000bps 
+
+#Next, using BUSCO to assess genome content completeness
+#Based on the presence of highly conserved genomic regions for your group of interest (e.g., Bacteria)
+#PATH:
+~/programs/busco-5.8.1/bin
+#Getting error that missing dependencies - requires many downloads
+#Trying to install Docker instead - weird, you are working from a container so inputs are different
+
+docker pull ezlabgva/busco:v5.8.2_cv1
+docker run -u $(id -u) -v $(pwd):/busco_wd ezlabgva/busco:v5.8.2_cv1
+
+#look at the help menu
+docker run --rm -u $(id -u) -v $(pwd):/busco_wd ezlabgva/busco:v5.8.2_cv1 busco --help
+# run busco
+docker run --rm -u $(id -u) -v $(pwd):/busco_wd ezlabgva/busco:v5.8.2_cv1 \
+    busco -i /busco_wd/spades_assembly_default/contigs.fasta -m genome -o /busco_wd/busco-results -l bacteria
+
+docker run --rm -u $(id -u) -v $(pwd):/busco_wd ezlabgva/busco:v5.8.2_cv1 \
+busco -i contigs.fatsa -m genome -o /busco_wd/busco-results -l bacteria
+
+#busco indicates there are no missing features in the genome (yay!)
+#But scaffolding did not work for this genome - will have to align contigs against existing genome
+
+# view the short summary
+less -S busco_wd/busco-results/short_summary.specific.bacteria_odb10.busco-results.txt
+# view the full table
+less -S busco-results/run_bacteria_odb10/full_table.tsv
+# list and view amino acid or protein sequence
+ls busco_wd/busco-results/run_bacteria_odb10/busco_sequences/fragmented_busco_sequences
+
+#Prokka database for genome annotation: https://github.com/tseemann/prokka
+docker pull staphb/prokka:latest
+docker run staphb/prokka:latest prokka -h
+
+docker run --rm -it -v $(pwd):/data staphb/prokka /bin/bash
+ls -lh contigs.fasta
+
+docker run --rm -u $(id -u) -v $(pwd):/data staphb/prokka \
+    prokka /data/contigs.fasta --outdir /data/prokka_output --cpus 6 --mincontiglen 200
+    
+ prokka /data/contigs.fasta --outdir /data/prokka_output --cpus 6 --mincontiglen 200
+#Cite prokka:  Seemann T (2014) Prokka: rapid prokaryotic genome annotation. Bioinformatics. 30(14):2068-9.
+
+#View output
+# List all the output files.
+ls spades_assembly_default/prokka_output
+# The GFF file contains the all the annotations and coordinates. It can be viewed in excel or with BASH. 
+# Extract all the products from the GFF (we made this command up in class)
+# Copy this command to get a txt file with counts for each gene annotation.
+grep -o "product=.*" prokka_output/PROKKA_*.gff | sed 's/product=//g' | sort | uniq -c | sort -nr > protein_abundances.txt
+
+'grep -o' is used to pull out only CDS sequences with a product, just the definition.
+# sed 's/search_term/replace_term/g', is used to search a replace items, below we want to remove all the 'product='
+# "sort | uniq -c "together combine all the duplicate lines and provide a count for each.
+# finally we save it to a file by using " > my_file"
+
+#Extract 16S sequence
+# grep for 16S in the PROKKA annotations to see if it exists
+grep 16S prokka_output/*.ffn
+# run extract with an exact header
+prokka extract_sequences "16S ribosomal RNA" prokka_output/PROKKA_*.ffn > 16S_sequence.fasta
+
+#extract sequence command not working...
+#Try:
+awk '/16S ribosomal RNA/ {print $0; getline; while ($0 !~ /^>/ && $0 != "") {print $0; getline} }' prokka_output/PROKKA_*.ffn > 16S_sequence.fasta
+#Get a full & partial 16S sequence - but "partial" 16S sequence is longer than full...? 
+#And when ncbi blasting, partial matches with 18S sequences
+#Top blasts results for 16S rRNA sequence is Celeribacter baekdonesis
+#Ran blast myself instead of using below
+
+# check if it worked
+less -S 16S_sequence.fasta
+
+#Blasting entire genome
+#Format contigs.fasta to blast-able format:
+~/programs/ncbi-blast-2.16.0+/bin/makeblastdb -in contigs.fasta -dbtype nucl -out contigs_db
+
+# examine the help menu, specifically look at the section about outfmt to see the available columns with explanations.
+~/programs/ncbi-blast-2.16.0+/bin/blastn -help
+# run BLAST
+~/programs/ncbi-blast-2.16.0+/bin/blastn blastn -query 16S_sequence.fasta -db contigs_db -out 16S_vs_contigs_6.tsv -outfmt 6
+# view the results
+tabview 16S_vs_contigs_6.tsv
+
+#Below wrapper script not working (bob_blast.sh)
+#Cannot get blast in terminal to work as do not have nt database downloaded (its really big)
+#Not sure how to access nt database from tutorial (is downloaded on tutorial's server)
+#May be able to access nt database remotely using below:
+#Note, accessing remotely is slow
+
+~/programs/ncbi-blast-2.16.0+/bin/blastn \
+-task megablast \
+-query contigs.fasta \
+-db nt \
+-remote \
+-outfmt "6 qseqid staxids bitscore std sscinames sskingdoms stitle" \
+-culling_limit 5 \
+-evalue 1e-25 \
+-out contigs_vs_nt_cul5_1e25.megablast.out
+
+~/programs/ncbi-blast-2.16.0+/bin/blastn \
+-task megablast \  # Faster search for highly similar sequences
+-query sequence.fasta \
+-db nt \
+-outfit '6 qseqid staxids bitscore std sscinames sskingdoms stitle' \  # Tabular output for downstream analysis
+-culling_limit 5 \  # Keep only the top hits
+-evalue 1e-25 \  # Increase stringency
+-num_threads 8 \  # Speed up search (ignored for remote, but good for local runs)
+-remote \
+-out result.blast
+
+
+#Cannot get blast of entire genome to work, skipping for now
+
+
+#Going to try to align against Celeribacter Baekdonesis (top 16S match) genome (downloaded)
+#Using BWA to align against downloaded ref_genome
+
+#First, must index ref genome file *.fna
+
+~/programs/bwa-0.7.17/bwa.c index 2616644820.fna
+#Code not working, binary bwa not correctly downloaded (new Mac issue?)
+#Try install via homebrew
+
+Next steps:
+	⁃	To add Homebrew to your PATH, add to your shell profile (e.g. ~/.bash_profile or ~/.zprofile):
+	⁃	eval "$(/opt/homebrew/bin/brew shellenv)" on Apple Silicon
+	⁃	eval "$(/usr/local/bin/brew shellenv)" on Intel
+	⁃	Run brew help to get started
+	⁃	Further documentation:
+
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+#Now, install bwa via homebrew
+/opt/homebrew/bin/brew install bwa
+
+#Step 1. index ref genome
+bwa index 2616644820.fna
+
+# Step 2: Map the reads and construct a SAM file.
+bwa mem -t 24 2616644820.fna \
+~/Documents/PhD/MU42022_WGS/Trimmomatic/paired_forward.fastq.gz \
+~/Documents/PhD/MU42022_WGS/Trimmomatic/paired_reverse.fastq.gz \
+> raw_mapped.sam
+
+# view the file with less, note that to see the data you have to scroll down past all the headers (@SQ).
+less -S raw_mapped.sam
+
+#Next, construct a convergence table
+#Install samtools via homebrew
+brew install samtools
+
+# Remove sequencing reads that did not match to the assembly and convert the SAM to a BAM.  **Long step**
+samtools view -@ 24 -Sb  raw_mapped.sam  | samtools sort -@ 24 -o sorted_mapped.bam
+# Examine how many reads mapped with samtools
+samtools flagstat sorted_mapped.bam
+#74.32% of reads were mapped to reference genome
+#73.40% of F and R reads were successfully mapped together
+
+# Calculate per base coverage with bedtools
+
+# index the new bam file
+samtools index sorted_mapped.bam
+
+brew install bedtools
+bedtools genomecov -ibam sorted_mapped.bam > coverage.out
+
+# Calculate per contig coverage with gen_input_table.py **issue: gen_input_table.py not listed in tutorial
+gen_input_table.py  --isbedfiles 2616644820.fna coverage.out >  coverage_table.tsv
+
+#Try using this code to manually compute per-contig coverage:
+awk '{sum[$1] += $2 * $3; len[$1] += $3} END {for (i in sum) print i, sum[i] / len[i]}' coverage.out > coverage_table.tsv
+#Add headers o table
+sed -i '' '1i\
+Contig_Name \ Average_Coverage
+' coverage_table.tsv
+# This outputs a simple file with two columns, the contig header and the average coverage.
+
+#Using Blobtools to visualize genome assembly
+#clone Github for installation: 
+git clone https://github.com/DRL/blobtools.git
+#Look at README and download package dependencies via conda
+#Conda failed to download a dependency so do it manually
+conda install -c conda-forge docopt
+conda install -c bioconda pysam
+
+##STOPPED here - having issues installing blobtools as requires conda
+#Need to figure out my conda situation 
+
+./blobtools --help
+
+# Create lookup table
+./blobtools create --help
+blobtools create -i contigs.fasta -b sorted_mapped.bam -t contigs.fasta.vs.nt.cul5.1e5.megablast.out -o blob_out
+# Create output table
+blobtools view --help
+blobtools view -i blob_out.blobDB.json -r all -o blob_taxonomy
+# view the table, I remove headers with grep -v and view with tabview
+grep -v '##' blob_taxonomy.blob_out.blobDB.table.txt
+# Plot the data
+blobtools plot --help
+blobtools plot -i blob_out.blobDB.json -r genus
+
+#Going to try IGV genome viewer in the meantime
+#Downloaded desktop application: https://igv.org/doc/desktop/#DownloadPage/
+#Opened reference genome (2616644820.fna)
+
+
+#Looking for tda genes - may be difficult as this paper: https://journals.asm.org/doi/full/10.1128/aem.02339-07
+#shows tda genes are not well-conserved in roseobacter
+
+#Going to blast the tdaA-tdaE primer region on my genome
+#Must create txt document with primer sequences
+#Make sure no spaces in sequence
+cat > tda_primers.fasta <<EOF
+>tdaA_forward
+CGCTTTCCGGAACTGGAGAT
+>tdaA_reverse
+GGCTGCCGTATAGTTTCAGCA
+EOF
+
+
+#And then create local blast database (i.e., my genome)
+~/programs/ncbi-blast-2.16.0+/bin/makeblastdb -in contigs.fasta -dbtype nucl -out Celeribacter_db
+
+#blast primers against local database
+~/programs/ncbi-blast-2.16.0+/bin/blastn -query tda_primers.fasta -db Celeribacter_db -out primer_hits.txt -evalue 1e-5 -outfmt 6
+#No hits - not present
+
+#try other Roseo primers
+cat > hsp60_primers.fasta <<EOF
+>hsp60_forward
+GAACCCAATGGACCTCAAACG
+>hsp60_reverse
+TAACCTTCACGATCTCTTACGC
+EOF
+
+~/programs/ncbi-blast-2.16.0+/bin/blastn -query hsp60_primers.fasta -db Celeribacter_db -out primer_hits.txt -evalue 1e-5 -outfmt 6
+#Also empty
+
+#Lets do a test to see if this method is working with a known sequence
+#First copy known sequence by viewing fatsa file:
+less contigs.fasta
+
+cat > known_sequence.fasta <<EOF
+ATATCGAGGTCAACA
+EOF
+
+~/programs/ncbi-blast-2.16.0+/bin/blastn -query known_sequence.fasta -db Celeribacter_db -out known_sequence_hits.txt -evalue 1e-5 -outfmt 6
+
+~/programs/ncbi-blast-2.16.0+/bin/blastn -query known_sequence.fasta -db Celeribacter_db
+
+#Still not working with known sequence, not sure why STOPPED HERE
+
